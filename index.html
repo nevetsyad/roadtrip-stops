@@ -296,6 +296,7 @@
     // --- State ---
     let stops = JSON.parse(localStorage.getItem('roadtrip-stops') || '[]');
     let map, routeLayer, markersLayer;
+    let segmentDistances = [];
 
     // --- Init ---
     function init() {
@@ -498,12 +499,11 @@
       // Render stop cards
       let html = '';
       const bounds = L.latLngBounds();
+      const segmentDistances = [];
 
       stops.forEach((stop, i) => {
-        const dist = i > 0 ? formatDistance(haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng)) : '—';
-        const cumDist = stops.slice(0, i + 1).reduce((sum, s, j) => {
-          return sum + (j > 0 ? haversine(stops[j-1].lat, stops[j-1].lng, s.lat, s.lng) : 0);
-        }, 0);
+        const haversineDist = i > 0 ? haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng) : 0;
+        segmentDistances.push(haversineDist);
 
         html += `
           <div class="stop-card" data-id="${stop.id}">
@@ -512,7 +512,7 @@
               <div class="stop-name">${escapeHtml(stop.name)}</div>
               <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
               ${stop.timestamp ? '<div class="stop-meta">' + new Date(stop.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</div>' : ''}
-              <div class="stop-distance">${i === 0 ? 'Start' : dist + ' mi from previous'}</div>
+              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : '<span class="spinner" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...'}</div>
             </div>
             <div class="stop-actions">
               <button class="stop-btn move" onclick="moveStop(${i}, -1)" title="Move up">↑</button>
@@ -531,13 +531,9 @@
 
       list.innerHTML = html;
 
-      // Draw route
+      // Fetch actual driving routes from OSRM
       if (stops.length > 1) {
-        const routeLine = L.polyline(
-          stops.map(s => [s.lat, s.lng]),
-          { color: '#3b82f6', weight: 4, opacity: 0.8, dashArray: '10, 6' }
-        ).addTo(routeLayer);
-        routeLayer.addLayer(routeLine);
+        await drawDrivingRoutes(stops);
       }
 
       // Fit map
@@ -547,14 +543,70 @@
         map.fitBounds(bounds, { padding: [40, 40] });
       }
 
-      // Update stats
-      const totalMiles = stops.reduce((sum, s, j) => {
-        return sum + (j > 0 ? haversine(stops[j-1].lat, stops[j-1].lng, s.lat, s.lng) : 0);
-      }, 0);
-
+      // Update stats with driving distances
+      const totalMiles = segmentDistances.reduce((a, b) => a + b, 0);
       document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
       document.getElementById('stopCount').textContent = stops.length;
       document.getElementById('estHours').textContent = Math.round(totalMiles / 55) + 'h';
+    }
+
+    async function drawDrivingRoutes(stops) {
+      // Fetch routes for each consecutive pair in parallel
+      const routePromises = [];
+      for (let i = 0; i < stops.length - 1; i++) {
+        const from = stops[i];
+        const to = stops[i + 1];
+        routePromises.push(
+          fetchOSRMRoute(from.lat, from.lng, to.lat, to.lng, i)
+        );
+      }
+      await Promise.all(routePromises);
+    }
+
+    async function fetchOSRMRoute(lat1, lng1, lat2, lng2, segmentIndex) {
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=geojson&steps=false`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.code === 'Ok' && data.routes.length > 0) {
+          const route = data.routes[0];
+          const coords = route.geometry.coordinates.map(c => [c[1], c[0]]); // GeoJSON is [lng, lat]
+          const miles = route.distance / 1609.34;
+
+          // Draw the actual road route
+          L.polyline(coords, {
+            color: '#3b82f6',
+            weight: 4,
+            opacity: 0.85,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }).addTo(routeLayer);
+
+          // Update segment distance display
+          const distEl = document.getElementById('dist-' + segmentIndex);
+          if (distEl) {
+            distEl.innerHTML = formatDistance(miles) + ' mi from previous';
+          }
+
+          // Update segment distance in our array
+          segmentDistances[segmentIndex] = miles;
+        } else {
+          // Fallback to haversine
+          const haversineDist = haversine(lat1, lng1, lat2, lng2);
+          segmentDistances[segmentIndex] = haversineDist;
+          const distEl = document.getElementById('dist-' + segmentIndex);
+          if (distEl) {
+            distEl.innerHTML = formatDistance(haversineDist) + ' mi (straight line)';
+          }
+        }
+      } catch (err) {
+        console.warn('OSRM route failed for segment', segmentIndex, err);
+        const distEl = document.getElementById('dist-' + segmentIndex);
+        if (distEl) {
+          distEl.innerHTML = '⚠️ routing failed';
+        }
+      }
     }
 
     function moveStop(index, direction) {
