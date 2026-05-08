@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Roadtrip Stops</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e4e4e7;
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    #map {
+      height: 45vh;
+      width: 100%;
+      z-index: 1;
+    }
+
+    .container {
+      padding: 12px;
+      padding-bottom: 100px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .trip-stats {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 12px;
+      background: #1a1d27;
+      border-radius: 12px;
+    }
+
+    .stat {
+      flex: 1;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #60a5fa;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: #71717a;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .upload-area {
+      margin-bottom: 16px;
+    }
+
+    .upload-btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.2s;
+    }
+
+    .upload-btn:active {
+      opacity: 0.8;
+    }
+
+    .upload-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .stops-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stop-card {
+      background: #1a1d27;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .stop-thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #27272a;
+    }
+
+    .stop-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .stop-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .stop-meta {
+      font-size: 0.8rem;
+      color: #71717a;
+    }
+
+    .stop-distance {
+      font-size: 0.8rem;
+      color: #60a5fa;
+      font-weight: 500;
+    }
+
+    .stop-actions {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .stop-btn {
+      background: none;
+      border: none;
+      color: #71717a;
+      cursor: pointer;
+      padding: 4px;
+      font-size: 1.1rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .stop-btn:active {
+      background: #27272a;
+    }
+
+    .stop-btn.delete {
+      color: #ef4444;
+    }
+
+    .stop-btn.move {
+      color: #71717a;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #52525b;
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .empty-state p {
+      font-size: 0.9rem;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #71717a;
+      font-size: 0.9rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #27272a;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .clear-btn {
+      width: 100%;
+      padding: 12px;
+      background: #1a1d27;
+      color: #ef4444;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+
+    .clear-btn:active {
+      background: #27272a;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 9px !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="container">
+    <div class="header">
+      <h1>🗺️ Roadtrip Stops</h1>
+    </div>
+
+    <div class="trip-stats" id="tripStats" style="display: none;">
+      <div class="stat">
+        <div class="stat-value" id="totalMiles">0</div>
+        <div class="stat-label">Total Miles</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stopCount">0</div>
+        <div class="stat-label">Stops</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="estHours">0h</div>
+        <div class="stat-label">Est. Drive</div>
+      </div>
+    </div>
+
+    <div class="upload-area">
+      <button class="upload-btn" id="uploadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        Add Stop from Photo
+      </button>
+      <input type="file" id="fileInput" accept="image/heic,image/heif,image/jpeg,image/jpg,image/png,image/*" multiple>
+    </div>
+
+    <div id="stopsList" class="stops-list">
+      <div class="empty-state" id="emptyState">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+        </svg>
+        <p>Add photos from your trip to get started</p>
+      </div>
+    </div>
+
+    <button class="clear-btn" id="clearBtn" style="display: none;">Clear All Stops</button>
+  </div>
+
+  <script>
+    // --- State ---
+    let stops = JSON.parse(localStorage.getItem('roadtrip-stops') || '[]');
+    let map, routeLayer, markersLayer;
+
+    // --- Init ---
+    function init() {
+      initMap();
+      renderStops();
+      setupUpload();
+      setupClear();
+    }
+
+    function initMap() {
+      map = L.map('map', {
+        center: [39.8, -98.5],
+        zoom: 4,
+        zoomControl: false,
+        attributionControl: true
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19
+      }).addTo(map);
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+      routeLayer = L.layerGroup().addTo(map);
+    }
+
+    function setupUpload() {
+      const btn = document.getElementById('uploadBtn');
+      const input = document.getElementById('fileInput');
+
+      btn.addEventListener('click', () => input.click());
+      input.addEventListener('change', handleFiles);
+    }
+
+    async function handleFiles(e) {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+
+      document.getElementById('emptyState')?.remove();
+
+      for (const file of files) {
+        await processFile(file);
+      }
+
+      input.value = '';
+    }
+
+    async function processFile(file) {
+      const loadingEl = document.createElement('div');
+      loadingEl.className = 'loading';
+      loadingEl.innerHTML = '<span class="spinner"></span> Processing <strong>' + file.name + '</strong>...';
+      document.getElementById('stopsList').prepend(loadingEl);
+
+      try {
+        // Extract EXIF data
+        let exif = null;
+        try {
+          exif = await exifr.parse(file, {
+            gps: true,
+            exif: true,
+            jpeg: true,
+            heif: true,
+            tiff: true,
+            png: true,
+            webp: true
+          });
+        } catch (e) {
+          console.warn('EXIF parse failed:', e);
+        }
+
+        let lat, lng, name;
+
+        if (exif && exif.latitude && exif.longitude) {
+          lat = exif.latitude;
+          lng = exif.longitude;
+
+          // Reverse geocode
+          name = await reverseGeocode(lat, lng);
+        } else {
+          // No GPS — ask user for location
+          name = prompt('No GPS data found in this photo. Enter location name:');
+          if (!name) {
+            loadingEl.remove();
+            return;
+          }
+          // Geocode the name
+          const coords = await geocode(name);
+          if (!coords) {
+            loadingEl.remove();
+            alert('Could not find "' + name + '". Try again.');
+            return;
+          }
+          lat = coords.lat;
+          lng = coords.lng;
+        }
+
+        // Create thumbnail
+        const thumbUrl = URL.createObjectURL(file);
+
+        const stop = {
+          id: Date.now() + Math.random(),
+          name: name || 'Unknown Location',
+          lat,
+          lng,
+          thumb: thumbUrl,
+          fileName: file.name,
+          timestamp: exif?.created ? new Date(exif.created).toISOString() : null
+        };
+
+        stops.push(stop);
+        saveStops();
+        renderStops();
+        loadingEl.remove();
+
+      } catch (err) {
+        console.error('Error processing file:', err);
+        loadingEl.innerHTML = '❌ Error processing <strong>' + file.name + '</strong>';
+        loadingEl.style.color = '#ef4444';
+      }
+    }
+
+    async function reverseGeocode(lat, lng) {
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+          { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
+        );
+        const data = await resp.json();
+        if (data.display_name) {
+          // Extract a readable name
+          const addr = data.address;
+          if (addr.road) return addr.road + (addr.neighbourhood ? ', ' + addr.neighbourhood : '');
+          if (addr.city || addr.town || addr.village) return addr.city || addr.town || addr.village;
+          return data.display_name.split(',').slice(0, 2).join(',');
+        }
+      } catch (e) {
+        console.warn('Reverse geocode failed:', e);
+      }
+      return `Stop ${stops.length + 1}`;
+    }
+
+    async function geocode(query) {
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+          { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
+        );
+        const data = await resp.json();
+        if (data.length > 0) {
+          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        }
+      } catch (e) {
+        console.warn('Geocode failed:', e);
+      }
+      return null;
+    }
+
+    function renderStops() {
+      const list = document.getElementById('stopsList');
+      const stats = document.getElementById('tripStats');
+      const clearBtn = document.getElementById('clearBtn');
+
+      // Clear existing
+      markersLayer.clearLayers();
+      routeLayer.clearLayers();
+
+      if (stops.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+            </svg>
+            <p>Add photos from your trip to get started</p>
+          </div>`;
+        stats.style.display = 'none';
+        clearBtn.style.display = 'none';
+        return;
+      }
+
+      stats.style.display = 'flex';
+      clearBtn.style.display = 'block';
+
+      // Render stop cards
+      let html = '';
+      const bounds = L.latLngBounds();
+
+      stops.forEach((stop, i) => {
+        const dist = i > 0 ? formatDistance(haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng)) : '—';
+        const cumDist = stops.slice(0, i + 1).reduce((sum, s, j) => {
+          return sum + (j > 0 ? haversine(stops[j-1].lat, stops[j-1].lng, s.lat, s.lng) : 0);
+        }, 0);
+
+        html += `
+          <div class="stop-card" data-id="${stop.id}">
+            <img class="stop-thumb" src="${stop.thumb}" alt="${stop.name}">
+            <div class="stop-info">
+              <div class="stop-name">${escapeHtml(stop.name)}</div>
+              <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
+              <div class="stop-distance">${i === 0 ? 'Start' : dist + ' mi from previous'}</div>
+            </div>
+            <div class="stop-actions">
+              <button class="stop-btn move" onclick="moveStop(${i}, -1)" title="Move up">↑</button>
+              <button class="stop-btn move" onclick="moveStop(${i}, 1)" title="Move down">↓</button>
+              <button class="stop-btn delete" onclick="deleteStop(${i})" title="Delete">✕</button>
+            </div>
+          </div>`;
+
+        // Add marker
+        const marker = L.marker([stop.lat, stop.lng])
+          .bindPopup(`<strong>${escapeHtml(stop.name)}</strong><br>#${i + 1}`)
+          .addTo(markersLayer);
+
+        bounds.extend([stop.lat, stop.lng]);
+      });
+
+      list.innerHTML = html;
+
+      // Draw route
+      if (stops.length > 1) {
+        const routeLine = L.polyline(
+          stops.map(s => [s.lat, s.lng]),
+          { color: '#3b82f6', weight: 4, opacity: 0.8, dashArray: '10, 6' }
+        ).addTo(routeLayer);
+        routeLayer.addLayer(routeLine);
+      }
+
+      // Fit map
+      if (stops.length === 1) {
+        map.setView([stops[0].lat, stops[0].lng], 14);
+      } else {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+
+      // Update stats
+      const totalMiles = stops.reduce((sum, s, j) => {
+        return sum + (j > 0 ? haversine(stops[j-1].lat, stops[j-1].lng, s.lat, s.lng) : 0);
+      }, 0);
+
+      document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
+      document.getElementById('stopCount').textContent = stops.length;
+      document.getElementById('estHours').textContent = Math.round(totalMiles / 55) + 'h';
+    }
+
+    function moveStop(index, direction) {
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= stops.length) return;
+      [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]];
+      saveStops();
+      renderStops();
+    }
+
+    function deleteStop(index) {
+      if (!confirm('Delete this stop?')) return;
+      stops.splice(index, 1);
+      saveStops();
+      renderStops();
+    }
+
+    function setupClear() {
+      document.getElementById('clearBtn').addEventListener('click', () => {
+        if (!confirm('Clear all stops? This cannot be undone.')) return;
+        stops = [];
+        saveStops();
+        renderStops();
+      });
+    }
+
+    function saveStops() {
+      // Don't store base64 thumbs in localStorage — they're too big
+      // Instead, store metadata only; thumbs are live object URLs
+      const saved = stops.map(s => ({
+        id: s.id,
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        fileName: s.fileName,
+        timestamp: s.timestamp
+      }));
+      localStorage.setItem('roadtrip-stops', JSON.stringify(saved));
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 3958.8; // miles
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatDistance(miles) {
+      if (miles < 1) return Math.round(miles * 5280) + 'ft';
+      if (miles < 10) return miles.toFixed(1) + ' mi';
+      return Math.round(miles) + ' mi';
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Start
+    init();
+  </script>
+</body>
+</html>
