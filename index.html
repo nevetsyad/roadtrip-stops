@@ -397,6 +397,14 @@
         // Create thumbnail
         const thumbUrl = URL.createObjectURL(file);
 
+        // Use EXIF timestamp for ordering, fall back to file modification date
+        let photoDate = null;
+        if (exif?.created) {
+          photoDate = new Date(exif.created).toISOString();
+        } else if (file.lastModified) {
+          photoDate = new Date(file.lastModified).toISOString();
+        }
+
         const stop = {
           id: Date.now() + Math.random(),
           name: name || 'Unknown Location',
@@ -404,10 +412,17 @@
           lng,
           thumb: thumbUrl,
           fileName: file.name,
-          timestamp: exif?.created ? new Date(exif.created).toISOString() : null
+          timestamp: photoDate
         };
 
         stops.push(stop);
+        // Sort by timestamp (oldest first), then by id for same-timestamp
+        stops.sort((a, b) => {
+          if (a.timestamp && b.timestamp) return new Date(a.timestamp) - new Date(b.timestamp);
+          if (a.timestamp) return -1;
+          if (b.timestamp) return 1;
+          return a.id - b.id;
+        });
         saveStops();
         renderStops();
         loadingEl.remove();
@@ -496,6 +511,7 @@
             <div class="stop-info">
               <div class="stop-name">${escapeHtml(stop.name)}</div>
               <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
+              ${stop.timestamp ? '<div class="stop-meta">' + new Date(stop.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</div>' : ''}
               <div class="stop-distance">${i === 0 ? 'Start' : dist + ' mi from previous'}</div>
             </div>
             <div class="stop-actions">
