@@ -18,7 +18,7 @@
     }
 
     #map {
-      height: 45vh;
+      height: 40vh;
       width: 100%;
       z-index: 1;
     }
@@ -33,18 +33,55 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 12px;
+      gap: 8px;
     }
 
     .header h1 {
-      font-size: 1.25rem;
+      font-size: 1.1rem;
       font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+
+    .trip-selector {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .trip-select {
+      background: #1a1d27;
+      color: #e4e4e7;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trip-btn {
+      background: #1a1d27;
+      color: #e4e4e7;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .trip-btn:active { background: #27272a; }
 
     .trip-stats {
       display: flex;
       gap: 12px;
-      margin-bottom: 16px;
-      padding: 12px;
+      margin-bottom: 12px;
+      padding: 10px;
       background: #1a1d27;
       border-radius: 12px;
     }
@@ -55,30 +92,30 @@
     }
 
     .stat-value {
-      font-size: 1.5rem;
+      font-size: 1.3rem;
       font-weight: 700;
       color: #60a5fa;
     }
 
     .stat-label {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       color: #71717a;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
     .upload-area {
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .upload-btn {
       width: 100%;
-      padding: 16px;
+      padding: 14px;
       background: linear-gradient(135deg, #3b82f6, #6366f1);
       color: white;
       border: none;
       border-radius: 12px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
@@ -88,24 +125,13 @@
       transition: opacity 0.2s;
     }
 
-    .upload-btn:active {
-      opacity: 0.8;
-    }
+    .upload-btn:active { opacity: 0.8; }
 
-    .upload-btn svg {
-      width: 20px;
-      height: 20px;
-    }
+    .upload-btn svg { width: 18px; height: 18px; }
 
-    #fileInput {
-      display: none;
-    }
+    #fileInput { display: none; }
 
-    .stops-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
+    .stops-list { display: flex; flex-direction: column; gap: 8px; }
 
     .stop-card {
       background: #1a1d27;
@@ -123,8 +149,8 @@
     }
 
     .stop-thumb {
-      width: 64px;
-      height: 64px;
+      width: 60px;
+      height: 60px;
       border-radius: 8px;
       object-fit: cover;
       flex-shrink: 0;
@@ -138,7 +164,7 @@
 
     .stop-name {
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       margin-bottom: 2px;
       white-space: nowrap;
       overflow: hidden;
@@ -146,12 +172,12 @@
     }
 
     .stop-meta {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: #71717a;
     }
 
     .stop-distance {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: #60a5fa;
       font-weight: 500;
     }
@@ -169,83 +195,74 @@
       color: #71717a;
       cursor: pointer;
       padding: 4px;
-      font-size: 1.1rem;
+      font-size: 1rem;
       border-radius: 6px;
       transition: all 0.2s;
     }
 
-    .stop-btn:active {
-      background: #27272a;
-    }
-
-    .stop-btn.delete {
-      color: #ef4444;
-    }
-
-    .stop-btn.move {
-      color: #71717a;
-    }
+    .stop-btn:active { background: #27272a; }
+    .stop-btn.delete { color: #ef4444; }
+    .stop-btn.move { color: #71717a; }
 
     .empty-state {
       text-align: center;
-      padding: 40px 20px;
+      padding: 30px 20px;
       color: #52525b;
     }
 
     .empty-state svg {
-      width: 48px;
-      height: 48px;
-      margin-bottom: 12px;
+      width: 40px;
+      height: 40px;
+      margin-bottom: 10px;
       opacity: 0.5;
     }
 
-    .empty-state p {
-      font-size: 0.9rem;
-    }
+    .empty-state p { font-size: 0.85rem; }
 
     .loading {
       text-align: center;
-      padding: 20px;
+      padding: 16px;
       color: #71717a;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
 
     .spinner {
       display: inline-block;
-      width: 20px;
-      height: 20px;
+      width: 16px;
+      height: 16px;
       border: 2px solid #27272a;
       border-top-color: #3b82f6;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
-      margin-right: 8px;
+      margin-right: 6px;
       vertical-align: middle;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    .clear-btn {
-      width: 100%;
-      padding: 12px;
-      background: #1a1d27;
-      color: #ef4444;
-      border: 1px solid #27272a;
-      border-radius: 12px;
-      font-size: 0.9rem;
-      font-weight: 500;
-      cursor: pointer;
-      margin-top: 12px;
-    }
-
-    .clear-btn:active {
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       background: #27272a;
+      color: #e4e4e7;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      z-index: 1000;
+      animation: fadeInUp 0.3s ease;
+      pointer-events: none;
+      max-width: 90vw;
+      text-align: center;
     }
 
-    .leaflet-control-attribution {
-      font-size: 9px !important;
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
+
+    .leaflet-control-attribution { font-size: 9px !important; }
   </style>
 </head>
 <body>
@@ -253,6 +270,10 @@
   <div class="container">
     <div class="header">
       <h1>🗺️ Roadtrip Stops</h1>
+      <div class="trip-selector">
+        <select class="trip-select" id="tripSelect"></select>
+        <button class="trip-btn" id="newTripBtn">+ New</button>
+      </div>
     </div>
 
     <div class="trip-stats" id="tripStats" style="display: none;">
@@ -288,22 +309,128 @@
         <p>Add photos from your trip to get started</p>
       </div>
     </div>
-
-    <button class="clear-btn" id="clearBtn" style="display: none;">Clear All Stops</button>
   </div>
 
   <script>
+    // --- IndexedDB for photo storage ---
+    const DB_NAME = 'roadtrip-stops-db';
+    const DB_VERSION = 1;
+    let db;
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const database = e.target.result;
+          if (!database.objectStoreNames.contains('photos')) {
+            database.createObjectStore('photos', { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => {
+          db = e.target.result;
+          resolve(db);
+        };
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    function savePhoto(id, blob) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').put({ id, blob });
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    function getPhoto(id) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('photos', 'readonly');
+        const request = tx.objectStore('photos').get(id);
+        request.onsuccess = () => resolve(request.result ? request.result.blob : null);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    function deletePhoto(id) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    // --- Trip Management ---
+    const TRIPS_KEY = 'roadtrip-trips';
+
+    function getTrips() {
+      return JSON.parse(localStorage.getItem(TRIPS_KEY) || '{}');
+    }
+
+    function saveTrips(trips) {
+      localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
+    }
+
+    function getCurrentTripId() {
+      return localStorage.getItem('roadtrip-current-trip') || null;
+    }
+
+    function setCurrentTripId(id) {
+      localStorage.setItem('roadtrip-current-trip', id);
+    }
+
+    function createTrip(name) {
+      const trips = getTrips();
+      const id = 'trip-' + Date.now();
+      trips[id] = {
+        id,
+        name: name || 'Trip ' + (Object.keys(trips).length + 1),
+        createdAt: new Date().toISOString(),
+        stops: []
+      };
+      saveTrips(trips);
+      setCurrentTripId(id);
+      return trips[id];
+    }
+
+    function getTrip(id) {
+      const trips = getTrips();
+      return trips[id] || null;
+    }
+
+    function deleteTrip(id) {
+      const trips = getTrips();
+      delete trips[id];
+      saveTrips(trips);
+      // Clean up photos
+      const trip = getTrip(id);
+      if (trip) {
+        trip.stops.forEach(stop => deletePhoto(stop.id));
+      }
+    }
+
+    function updateTripStops(tripId, stops) {
+      const trips = getTrips();
+      if (trips[tripId]) {
+        trips[tripId].stops = stops;
+        saveTrips(trips);
+      }
+    }
+
     // --- State ---
-    let stops = JSON.parse(localStorage.getItem('roadtrip-stops') || '[]');
+    let stops = [];
     let map, routeLayer, markersLayer;
     let segmentDistances = [];
 
     // --- Init ---
-    function init() {
+    async function init() {
+      await openDB();
       initMap();
-      renderStops();
+      setupTripUI();
       setupUpload();
       setupClear();
+      loadCurrentTrip();
     }
 
     function initMap() {
@@ -325,6 +452,64 @@
       routeLayer = L.layerGroup().addTo(map);
     }
 
+    // --- Trip UI ---
+    function setupTripUI() {
+      const select = document.getElementById('tripSelect');
+      const newBtn = document.getElementById('newTripBtn');
+
+      function renderTripSelect() {
+        const trips = getTrips();
+        const currentId = getCurrentTripId();
+        select.innerHTML = '';
+
+        Object.values(trips).forEach(trip => {
+          const opt = document.createElement('option');
+          opt.value = trip.id;
+          opt.textContent = trip.name;
+          if (trip.id === currentId) opt.selected = true;
+          select.appendChild(opt);
+        });
+      }
+
+      select.addEventListener('change', () => {
+        setCurrentTripId(select.value);
+        loadCurrentTrip();
+      });
+
+      newBtn.addEventListener('click', async () => {
+        const name = prompt('Trip name:');
+        if (name === null) return;
+        const trip = createTrip(name);
+        renderTripSelect();
+        select.value = trip.id;
+        setCurrentTripId(trip.id);
+        loadCurrentTrip();
+        showToast('Created "' + trip.name + '"');
+      });
+
+      renderTripSelect();
+    }
+
+    async function loadCurrentTrip() {
+      const tripId = getCurrentTripId();
+      if (!tripId) {
+        // Create default trip
+        const trip = createTrip('My Trip');
+        document.getElementById('tripSelect').value = trip.id;
+        setCurrentTripId(trip.id);
+        stops = [];
+      } else {
+        const trip = getTrip(tripId);
+        if (!trip) {
+          stops = [];
+        } else {
+          stops = trip.stops.map(s => ({ ...s }));
+        }
+      }
+      await renderStops();
+    }
+
+    // --- Upload ---
     function setupUpload() {
       const btn = document.getElementById('uploadBtn');
       const input = document.getElementById('fileInput');
@@ -357,13 +542,8 @@
         let exif = null;
         try {
           exif = await exifr.parse(file, {
-            gps: true,
-            exif: true,
-            jpeg: true,
-            heif: true,
-            tiff: true,
-            png: true,
-            webp: true
+            gps: true, exif: true, jpeg: true, heif: true,
+            tiff: true, png: true, webp: true
           });
         } catch (e) {
           console.warn('EXIF parse failed:', e);
@@ -374,31 +554,21 @@
         if (exif && exif.latitude && exif.longitude) {
           lat = exif.latitude;
           lng = exif.longitude;
-
-          // Reverse geocode
           name = await reverseGeocode(lat, lng);
         } else {
-          // No GPS — ask user for location
-          name = prompt('No GPS data found in this photo. Enter location name:');
-          if (!name) {
-            loadingEl.remove();
-            return;
-          }
-          // Geocode the name
+          name = prompt('No GPS data found. Enter location name:');
+          if (!name) { loadingEl.remove(); return; }
           const coords = await geocode(name);
           if (!coords) {
             loadingEl.remove();
-            alert('Could not find "' + name + '". Try again.');
+            alert('Could not find "' + name + '".');
             return;
           }
           lat = coords.lat;
           lng = coords.lng;
         }
 
-        // Create thumbnail
-        const thumbUrl = URL.createObjectURL(file);
-
-        // Use EXIF timestamp for ordering, fall back to file modification date
+        // Use EXIF timestamp for ordering
         let photoDate = null;
         if (exif?.created) {
           photoDate = new Date(exif.created).toISOString();
@@ -406,26 +576,56 @@
           photoDate = new Date(file.lastModified).toISOString();
         }
 
+        // Duplicate detection: check GPS + timestamp tolerance
+        const isDuplicate = stops.some(s => {
+          const dist = haversine(s.lat, s.lng, lat, lng);
+          const timeDiff = s.timestamp && photoDate ?
+            Math.abs(new Date(s.timestamp) - new Date(photoDate)) : 0;
+          // Within 50m and 5 minutes = duplicate
+          return dist < 0.03 && timeDiff < 300000;
+        });
+
+        if (isDuplicate) {
+          loadingEl.innerHTML = '⏭️ Skipped duplicate: <strong>' + file.name + '</strong>';
+          loadingEl.style.color = '#f59e0b';
+          setTimeout(() => loadingEl.remove(), 2000);
+          return;
+        }
+
+        // Create thumbnail URL for display
+        const thumbUrl = URL.createObjectURL(file);
+
         const stop = {
-          id: Date.now() + Math.random(),
+          id: 'stop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
           name: name || 'Unknown Location',
           lat,
           lng,
           thumb: thumbUrl,
           fileName: file.name,
-          timestamp: photoDate
+          timestamp: photoDate,
+          distance: 0,
+          routeGeometry: null
         };
 
+        // Save photo blob to IndexedDB
+        await savePhoto(stop.id, file);
+
         stops.push(stop);
-        // Sort by timestamp (oldest first), then by id for same-timestamp
+        // Sort by timestamp (oldest first), then by id
         stops.sort((a, b) => {
           if (a.timestamp && b.timestamp) return new Date(a.timestamp) - new Date(b.timestamp);
           if (a.timestamp) return -1;
           if (b.timestamp) return 1;
-          return a.id - b.id;
+          return a.id.localeCompare(b.id);
         });
-        saveStops();
-        renderStops();
+
+        // Save trip data
+        const tripId = getCurrentTripId();
+        if (tripId) {
+          updateTripStops(tripId, stops);
+        }
+
+        await renderStops();
         loadingEl.remove();
 
       } catch (err) {
@@ -443,7 +643,6 @@
         );
         const data = await resp.json();
         if (data.display_name) {
-          // Extract a readable name
           const addr = data.address;
           if (addr.road) return addr.road + (addr.neighbourhood ? ', ' + addr.neighbourhood : '');
           if (addr.city || addr.town || addr.village) return addr.city || addr.town || addr.village;
@@ -489,17 +688,15 @@
             <p>Add photos from your trip to get started</p>
           </div>`;
         stats.style.display = 'none';
-        clearBtn.style.display = 'none';
         return;
       }
 
       stats.style.display = 'flex';
-      clearBtn.style.display = 'block';
 
       // Render stop cards
       let html = '';
       const bounds = L.latLngBounds();
-      const segmentDistances = [];
+      segmentDistances = [];
 
       stops.forEach((stop, i) => {
         const haversineDist = i > 0 ? haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng) : 0;
@@ -512,7 +709,7 @@
               <div class="stop-name">${escapeHtml(stop.name)}</div>
               <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
               ${stop.timestamp ? '<div class="stop-meta">' + new Date(stop.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</div>' : ''}
-              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : '<span class="spinner" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...'}</div>
+              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : (stop.distance ? stop.distance + ' mi' : '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...')}</div>
             </div>
             <div class="stop-actions">
               <button class="stop-btn move" onclick="moveStop(${i}, -1)" title="Move up">↑</button>
@@ -543,7 +740,7 @@
         map.fitBounds(bounds, { padding: [40, 40] });
       }
 
-      // Update stats with driving distances
+      // Update stats
       const totalMiles = segmentDistances.reduce((a, b) => a + b, 0);
       document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
       document.getElementById('stopCount').textContent = stops.length;
@@ -551,14 +748,11 @@
     }
 
     async function drawDrivingRoutes(stops) {
-      // Fetch routes for each consecutive pair in parallel
       const routePromises = [];
       for (let i = 0; i < stops.length - 1; i++) {
         const from = stops[i];
         const to = stops[i + 1];
-        routePromises.push(
-          fetchOSRMRoute(from.lat, from.lng, to.lat, to.lng, i)
-        );
+        routePromises.push(fetchOSRMRoute(from.lat, from.lng, to.lat, to.lng, i));
       }
       await Promise.all(routePromises);
     }
@@ -571,10 +765,9 @@
 
         if (data.code === 'Ok' && data.routes.length > 0) {
           const route = data.routes[0];
-          const coords = route.geometry.coordinates.map(c => [c[1], c[0]]); // GeoJSON is [lng, lat]
+          const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
           const miles = route.distance / 1609.34;
 
-          // Draw the actual road route
           L.polyline(coords, {
             color: '#3b82f6',
             weight: 4,
@@ -583,21 +776,30 @@
             lineJoin: 'round'
           }).addTo(routeLayer);
 
-          // Update segment distance display
+          segmentDistances[segmentIndex] = miles;
+
+          // Update stop card
           const distEl = document.getElementById('dist-' + segmentIndex);
           if (distEl) {
-            distEl.innerHTML = formatDistance(miles) + ' mi from previous';
+            distEl.innerHTML = formatDistance(miles) + ' mi';
           }
 
-          // Update segment distance in our array
-          segmentDistances[segmentIndex] = miles;
+          // Update stop data
+          if (stops[segmentIndex + 1]) {
+            stops[segmentIndex + 1].distance = formatDistance(miles);
+          }
+
+          // Save updated trip
+          const tripId = getCurrentTripId();
+          if (tripId) {
+            updateTripStops(tripId, stops);
+          }
         } else {
-          // Fallback to haversine
           const haversineDist = haversine(lat1, lng1, lat2, lng2);
           segmentDistances[segmentIndex] = haversineDist;
           const distEl = document.getElementById('dist-' + segmentIndex);
           if (distEl) {
-            distEl.innerHTML = formatDistance(haversineDist) + ' mi (straight line)';
+            distEl.innerHTML = formatDistance(haversineDist) + ' mi';
           }
         }
       } catch (err) {
@@ -613,42 +815,28 @@
       const newIndex = index + direction;
       if (newIndex < 0 || newIndex >= stops.length) return;
       [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]];
-      saveStops();
+      const tripId = getCurrentTripId();
+      if (tripId) updateTripStops(tripId, stops);
       renderStops();
     }
 
-    function deleteStop(index) {
+    async function deleteStop(index) {
       if (!confirm('Delete this stop?')) return;
+      const stop = stops[index];
       stops.splice(index, 1);
-      saveStops();
+      // Clean up photo
+      await deletePhoto(stop.id);
+      const tripId = getCurrentTripId();
+      if (tripId) updateTripStops(tripId, stops);
       renderStops();
     }
 
     function setupClear() {
-      document.getElementById('clearBtn').addEventListener('click', () => {
-        if (!confirm('Clear all stops? This cannot be undone.')) return;
-        stops = [];
-        saveStops();
-        renderStops();
-      });
-    }
-
-    function saveStops() {
-      // Don't store base64 thumbs in localStorage — they're too big
-      // Instead, store metadata only; thumbs are live object URLs
-      const saved = stops.map(s => ({
-        id: s.id,
-        name: s.name,
-        lat: s.lat,
-        lng: s.lng,
-        fileName: s.fileName,
-        timestamp: s.timestamp
-      }));
-      localStorage.setItem('roadtrip-stops', JSON.stringify(saved));
+      // Clear button is handled via trip deletion
     }
 
     function haversine(lat1, lon1, lat2, lon2) {
-      const R = 3958.8; // miles
+      const R = 3958.8;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -669,8 +857,16 @@
       return div.innerHTML;
     }
 
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
     // Start
-    init();
+    init().catch(console.error);
   </script>
 </body>
 </html>
