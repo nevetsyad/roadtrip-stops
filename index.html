@@ -108,6 +108,12 @@
       margin-bottom: 12px;
     }
 
+    .data-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
     .upload-btn {
       width: 100%;
       padding: 14px;
@@ -126,6 +132,20 @@
     }
 
     .upload-btn:active { opacity: 0.8; }
+
+    .data-btn {
+      flex: 1;
+      padding: 10px;
+      background: #1a1d27;
+      color: #e4e4e7;
+      border: 1px solid #27272a;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .data-btn:active { background: #27272a; }
 
     .upload-btn svg { width: 18px; height: 18px; }
 
@@ -299,6 +319,11 @@
         Add Stop from Photo
       </button>
       <input type="file" id="fileInput" accept="image/heic,image/heif,image/jpeg,image/jpg,image/png,image/*" multiple>
+      <input type="file" id="importInput" accept="application/json,.json" style="display:none">
+      <div class="data-actions">
+        <button class="data-btn" id="exportBtn">Export Trip</button>
+        <button class="data-btn" id="importBtn">Import Trip</button>
+      </div>
     </div>
 
     <div id="stopsList" class="stops-list">
@@ -399,21 +424,24 @@
       return trips[id] || null;
     }
 
-    function deleteTrip(id) {
+    async function deleteTrip(id) {
       const trips = getTrips();
+      // Clean up photos
+      const trip = trips[id];
+      if (trip) {
+        await Promise.all(trip.stops.map(stop => deletePhoto(stop.id)));
+      }
       delete trips[id];
       saveTrips(trips);
-      // Clean up photos
-      const trip = getTrip(id);
-      if (trip) {
-        trip.stops.forEach(stop => deletePhoto(stop.id));
-      }
     }
 
     function updateTripStops(tripId, stops) {
       const trips = getTrips();
       if (trips[tripId]) {
-        trips[tripId].stops = stops;
+        trips[tripId].stops = stops.map(stop => {
+          const { thumb, ...persistedStop } = stop;
+          return persistedStop;
+        });
         saveTrips(trips);
       }
     }
@@ -422,6 +450,8 @@
     let stops = [];
     let map, routeLayer, markersLayer;
     let segmentDistances = [];
+    let segmentDurations = [];
+    const thumbUrls = new Map();
 
     // --- Init ---
     async function init() {
@@ -513,9 +543,15 @@
     function setupUpload() {
       const btn = document.getElementById('uploadBtn');
       const input = document.getElementById('fileInput');
+      const importBtn = document.getElementById('importBtn');
+      const importInput = document.getElementById('importInput');
+      const exportBtn = document.getElementById('exportBtn');
 
       btn.addEventListener('click', () => input.click());
       input.addEventListener('change', handleFiles);
+      exportBtn.addEventListener('click', exportCurrentTrip);
+      importBtn.addEventListener('click', () => importInput.click());
+      importInput.addEventListener('change', importTrip);
     }
 
     async function handleFiles(e) {
@@ -528,7 +564,7 @@
         await processFile(file);
       }
 
-      input.value = '';
+      e.target.value = '';
     }
 
     async function processFile(file) {
@@ -592,23 +628,21 @@
           return;
         }
 
-        // Create thumbnail URL for display
-        const thumbUrl = URL.createObjectURL(file);
-
         const stop = {
           id: 'stop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
           name: name || 'Unknown Location',
           lat,
           lng,
-          thumb: thumbUrl,
           fileName: file.name,
           timestamp: photoDate,
           distance: 0,
+          duration: 0,
           routeGeometry: null
         };
 
         // Save photo blob to IndexedDB
         await savePhoto(stop.id, file);
+        setThumbUrl(stop, file);
 
         stops.push(stop);
         // Sort by timestamp (oldest first), then by id
@@ -670,10 +704,151 @@
       return null;
     }
 
+    function setThumbUrl(stop, blob) {
+      if (thumbUrls.has(stop.id)) URL.revokeObjectURL(thumbUrls.get(stop.id));
+      const url = URL.createObjectURL(blob);
+      thumbUrls.set(stop.id, url);
+      stop.thumb = url;
+      return url;
+    }
+
+    async function ensureThumbs() {
+      await Promise.all(stops.map(async stop => {
+        if (thumbUrls.has(stop.id)) {
+          stop.thumb = thumbUrls.get(stop.id);
+          return;
+        }
+        const blob = await getPhoto(stop.id);
+        if (blob) setThumbUrl(stop, blob);
+      }));
+    }
+
+    function routeKey(from, to) {
+      return [from.lat, from.lng, to.lat, to.lng].map(n => Number(n).toFixed(5)).join(',');
+    }
+
+    function formatDuration(seconds) {
+      if (!seconds) return '0h';
+      const mins = Math.round(seconds / 60);
+      if (mins < 60) return mins + 'm';
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return m ? h + 'h ' + m + 'm' : h + 'h';
+    }
+
+    function addRouteToMap(route) {
+      if (!route?.geometry) return;
+      L.polyline(route.geometry, {
+        color: '#3b82f6',
+        weight: 4,
+        opacity: 0.85,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(routeLayer);
+    }
+
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function dataUrlToBlob(dataUrl) {
+      const resp = await fetch(dataUrl);
+      return resp.blob();
+    }
+
+    async function exportCurrentTrip() {
+      const tripId = getCurrentTripId();
+      const trip = getTrip(tripId);
+      if (!trip) return alert('No trip to export.');
+
+      const exportStops = await Promise.all(trip.stops.map(async stop => {
+        const { thumb, ...cleanStop } = stop;
+        const blob = await getPhoto(stop.id);
+        return {
+          ...cleanStop,
+          photoDataUrl: blob ? await blobToDataUrl(blob) : null
+        };
+      }));
+
+      const payload = {
+        app: 'roadtrip-stops',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        trip: { ...trip, stops: exportStops }
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (trip.name || 'roadtrip').replace(/[^a-z0-9-_]+/gi, '-').toLowerCase() + '.roadtrip.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exported "' + trip.name + '"');
+    }
+
+    async function importTrip(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const payload = JSON.parse(await file.text());
+        const imported = payload.trip || payload;
+        if (!imported.name || !Array.isArray(imported.stops)) throw new Error('Invalid trip file');
+
+        const trips = getTrips();
+        const id = 'trip-' + Date.now();
+        const importedStops = [];
+
+        for (const stop of imported.stops) {
+          const { photoDataUrl, thumb, ...cleanStop } = stop;
+          const newStop = {
+            ...cleanStop,
+            id: 'stop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+          };
+          importedStops.push(newStop);
+          if (photoDataUrl) {
+            const blob = await dataUrlToBlob(photoDataUrl);
+            await savePhoto(newStop.id, blob);
+            setThumbUrl(newStop, blob);
+          }
+        }
+
+        trips[id] = {
+          id,
+          name: imported.name + ' (Imported)',
+          createdAt: new Date().toISOString(),
+          stops: importedStops
+        };
+        saveTrips(trips);
+        setCurrentTripId(id);
+        stops = importedStops;
+
+        const select = document.getElementById('tripSelect');
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = trips[id].name;
+        opt.selected = true;
+        select.appendChild(opt);
+
+        await renderStops();
+        showToast('Imported "' + imported.name + '"');
+      } catch (err) {
+        console.error('Import failed:', err);
+        alert('Could not import this trip file.');
+      } finally {
+        e.target.value = '';
+      }
+    }
+
     async function renderStops() {
       const list = document.getElementById('stopsList');
       const stats = document.getElementById('tripStats');
-      const clearBtn = document.getElementById('clearBtn');
 
       // Clear existing
       markersLayer.clearLayers();
@@ -692,11 +867,13 @@
       }
 
       stats.style.display = 'flex';
+      await ensureThumbs();
 
       // Render stop cards
       let html = '';
       const bounds = L.latLngBounds();
       segmentDistances = [];
+      segmentDurations = [];
 
       stops.forEach((stop, i) => {
         const haversineDist = i > 0 ? haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng) : 0;
@@ -709,7 +886,7 @@
               <div class="stop-name">${escapeHtml(stop.name)}</div>
               <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
               ${stop.timestamp ? '<div class="stop-meta">' + new Date(stop.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</div>' : ''}
-              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : (stop.distance ? stop.distance + ' mi' : '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...')}</div>
+              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : (stop.distance ? stop.distance : '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...')}</div>
             </div>
             <div class="stop-actions">
               <button class="stop-btn move" onclick="moveStop(${i}, -1)" title="Move up">↑</button>
@@ -742,9 +919,10 @@
 
       // Update stats
       const totalMiles = segmentDistances.reduce((a, b) => a + b, 0);
+      const totalSeconds = segmentDurations.reduce((a, b) => a + b, 0);
       document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
       document.getElementById('stopCount').textContent = stops.length;
-      document.getElementById('estHours').textContent = Math.round(totalMiles / 55) + 'h';
+      document.getElementById('estHours').textContent = totalSeconds ? formatDuration(totalSeconds) : Math.round(totalMiles / 55) + 'h';
     }
 
     async function drawDrivingRoutes(stops) {
@@ -758,6 +936,19 @@
     }
 
     async function fetchOSRMRoute(lat1, lng1, lat2, lng2, segmentIndex) {
+      const from = stops[segmentIndex];
+      const to = stops[segmentIndex + 1];
+      const key = from && to ? routeKey(from, to) : null;
+
+      if (to?.routeCache?.key === key) {
+        segmentDistances[segmentIndex + 1] = to.routeCache.miles;
+        segmentDurations[segmentIndex + 1] = to.routeCache.duration || 0;
+        addRouteToMap(to.routeCache);
+        const distEl = document.getElementById('dist-' + (segmentIndex + 1));
+        if (distEl) distEl.innerHTML = formatDistance(to.routeCache.miles);
+        return;
+      }
+
       try {
         const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=geojson&steps=false`;
         const resp = await fetch(url);
@@ -767,26 +958,23 @@
           const route = data.routes[0];
           const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
           const miles = route.distance / 1609.34;
+          const cachedRoute = { key, miles, duration: route.duration || 0, geometry: coords };
+          addRouteToMap(cachedRoute);
 
-          L.polyline(coords, {
-            color: '#3b82f6',
-            weight: 4,
-            opacity: 0.85,
-            lineCap: 'round',
-            lineJoin: 'round'
-          }).addTo(routeLayer);
-
-          segmentDistances[segmentIndex] = miles;
+          segmentDistances[segmentIndex + 1] = miles;
+          segmentDurations[segmentIndex + 1] = route.duration || 0;
 
           // Update stop card
-          const distEl = document.getElementById('dist-' + segmentIndex);
+          const distEl = document.getElementById('dist-' + (segmentIndex + 1));
           if (distEl) {
-            distEl.innerHTML = formatDistance(miles) + ' mi';
+            distEl.innerHTML = formatDistance(miles);
           }
 
           // Update stop data
-          if (stops[segmentIndex + 1]) {
-            stops[segmentIndex + 1].distance = formatDistance(miles);
+          if (to) {
+            to.distance = formatDistance(miles);
+            to.duration = route.duration || 0;
+            to.routeCache = cachedRoute;
           }
 
           // Save updated trip
@@ -796,15 +984,15 @@
           }
         } else {
           const haversineDist = haversine(lat1, lng1, lat2, lng2);
-          segmentDistances[segmentIndex] = haversineDist;
-          const distEl = document.getElementById('dist-' + segmentIndex);
+          segmentDistances[segmentIndex + 1] = haversineDist;
+          const distEl = document.getElementById('dist-' + (segmentIndex + 1));
           if (distEl) {
-            distEl.innerHTML = formatDistance(haversineDist) + ' mi';
+            distEl.innerHTML = formatDistance(haversineDist);
           }
         }
       } catch (err) {
         console.warn('OSRM route failed for segment', segmentIndex, err);
-        const distEl = document.getElementById('dist-' + segmentIndex);
+        const distEl = document.getElementById('dist-' + (segmentIndex + 1));
         if (distEl) {
           distEl.innerHTML = '⚠️ routing failed';
         }
