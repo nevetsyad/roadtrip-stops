@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Roadtrip Stops</title>
+  <meta name="theme-color" content="#0f1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
@@ -76,6 +80,7 @@
     }
 
     .trip-btn:active { background: #27272a; }
+    .trip-btn.danger { color: #ef4444; border-color: #7f1d1d; }
 
     .trip-stats {
       display: flex;
@@ -161,7 +166,10 @@
       gap: 12px;
       padding: 12px;
       animation: slideIn 0.3s ease;
+      cursor: pointer;
     }
+
+    .stop-card:active { background: #22252f; }
 
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(10px); }
@@ -223,6 +231,7 @@
     .stop-btn:active { background: #27272a; }
     .stop-btn.delete { color: #ef4444; }
     .stop-btn.move { color: #71717a; }
+    .stop-btn.edit { color: #60a5fa; }
 
     .empty-state {
       text-align: center;
@@ -282,6 +291,42 @@
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
 
+    /* Lightbox */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      animation: fadeIn 0.2s ease;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .lightbox img {
+      max-width: 95vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Offline banner */
+    .offline-banner {
+      background: #f59e0b;
+      color: #000;
+      text-align: center;
+      padding: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
     .leaflet-control-attribution { font-size: 9px !important; }
   </style>
 </head>
@@ -293,6 +338,8 @@
       <div class="trip-selector">
         <select class="trip-select" id="tripSelect"></select>
         <button class="trip-btn" id="newTripBtn">+ New</button>
+        <button class="trip-btn" id="renameTripBtn" title="Rename trip">✏️</button>
+        <button class="trip-btn danger" id="deleteTripBtn" title="Delete trip">🗑️</button>
       </div>
     </div>
 
@@ -386,6 +433,16 @@
       });
     }
 
+    // --- Nominatim rate limiter (1 req/sec) ---
+    let lastApiCall = 0;
+    async function rateLimitedFetch(url, opts) {
+      const now = Date.now();
+      const wait = Math.max(0, 1100 - (now - lastApiCall));
+      if (wait > 0) await new Promise(r => setTimeout(r, wait));
+      lastApiCall = Date.now();
+      return fetch(url, opts);
+    }
+
     // --- Trip Management ---
     const TRIPS_KEY = 'roadtrip-trips';
 
@@ -405,9 +462,17 @@
       localStorage.setItem('roadtrip-current-trip', id);
     }
 
+    function generateId(prefix) {
+      // Use crypto for uniqueness instead of Date.now() alone
+      const random = (typeof crypto !== 'undefined' && crypto.getRandomValues)
+        ? Array.from(crypto.getRandomValues(new Uint8Array(3))).map(b => b.toString(36)).join('')
+        : Math.random().toString(36).substr(2, 9);
+      return prefix + Date.now() + '-' + random;
+    }
+
     function createTrip(name) {
       const trips = getTrips();
-      const id = 'trip-' + Date.now();
+      const id = generateId('trip-');
       trips[id] = {
         id,
         name: name || 'Trip ' + (Object.keys(trips).length + 1),
@@ -424,15 +489,30 @@
       return trips[id] || null;
     }
 
-    async function deleteTrip(id) {
+    function renameTrip(id, newName) {
       const trips = getTrips();
-      // Clean up photos
+      if (trips[id]) {
+        trips[id].name = newName;
+        saveTrips(trips);
+      }
+    }
+
+    async function deleteTripById(id) {
+      const trips = getTrips();
       const trip = trips[id];
       if (trip) {
         await Promise.all(trip.stops.map(stop => deletePhoto(stop.id)));
       }
       delete trips[id];
       saveTrips(trips);
+      if (getCurrentTripId() === id) {
+        const remaining = Object.keys(trips);
+        if (remaining.length > 0) {
+          setCurrentTripId(remaining[0]);
+        } else {
+          localStorage.removeItem('roadtrip-current-trip');
+        }
+      }
     }
 
     function updateTripStops(tripId, stops) {
@@ -452,6 +532,7 @@
     let segmentDistances = [];
     let segmentDurations = [];
     const thumbUrls = new Map();
+    const markers = [];
 
     // --- Init ---
     async function init() {
@@ -459,7 +540,6 @@
       initMap();
       setupTripUI();
       setupUpload();
-      setupClear();
       loadCurrentTrip();
     }
 
@@ -486,6 +566,8 @@
     function setupTripUI() {
       const select = document.getElementById('tripSelect');
       const newBtn = document.getElementById('newTripBtn');
+      const renameBtn = document.getElementById('renameTripBtn');
+      const deleteBtn = document.getElementById('deleteTripBtn');
 
       function renderTripSelect() {
         const trips = getTrips();
@@ -517,13 +599,43 @@
         showToast('Created "' + trip.name + '"');
       });
 
+      renameBtn.addEventListener('click', () => {
+        const tripId = getCurrentTripId();
+        if (!tripId) return;
+        const trip = getTrip(tripId);
+        if (!trip) return;
+        const newName = prompt('Rename trip:', trip.name);
+        if (newName === null || newName === trip.name) return;
+        renameTrip(tripId, newName);
+        renderTripSelect();
+        showToast('Renamed to "' + newName + '"');
+      });
+
+      deleteBtn.addEventListener('click', async () => {
+        const tripId = getCurrentTripId();
+        if (!tripId) return;
+        const trip = getTrip(tripId);
+        if (!trip) return;
+        if (!confirm('Delete "' + trip.name + '" and all its stops? This cannot be undone.')) return;
+        await deleteTripById(tripId);
+        // Clean up thumb URLs
+        stops.forEach(s => {
+          if (thumbUrls.has(s.id)) {
+            URL.revokeObjectURL(thumbUrls.get(s.id));
+            thumbUrls.delete(s.id);
+          }
+        });
+        renderTripSelect();
+        loadCurrentTrip();
+        showToast('Deleted "' + trip.name + '"');
+      });
+
       renderTripSelect();
     }
 
     async function loadCurrentTrip() {
       const tripId = getCurrentTripId();
       if (!tripId) {
-        // Create default trip
         const trip = createTrip('My Trip');
         document.getElementById('tripSelect').value = trip.id;
         setCurrentTripId(trip.id);
@@ -574,7 +686,6 @@
       document.getElementById('stopsList').prepend(loadingEl);
 
       try {
-        // Extract EXIF data
         let exif = null;
         try {
           exif = await exifr.parse(file, {
@@ -604,7 +715,6 @@
           lng = coords.lng;
         }
 
-        // Use EXIF timestamp for ordering
         let photoDate = null;
         if (exif?.created) {
           photoDate = new Date(exif.created).toISOString();
@@ -612,12 +722,11 @@
           photoDate = new Date(file.lastModified).toISOString();
         }
 
-        // Duplicate detection: check GPS + timestamp tolerance
+        // Duplicate detection
         const isDuplicate = stops.some(s => {
           const dist = haversine(s.lat, s.lng, lat, lng);
           const timeDiff = s.timestamp && photoDate ?
             Math.abs(new Date(s.timestamp) - new Date(photoDate)) : 0;
-          // Within 50m and 5 minutes = duplicate
           return dist < 0.03 && timeDiff < 300000;
         });
 
@@ -629,23 +738,21 @@
         }
 
         const stop = {
-          id: 'stop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+          id: generateId('stop-'),
           name: name || 'Unknown Location',
           lat,
           lng,
           fileName: file.name,
           timestamp: photoDate,
-          distance: 0,
+          distance: '',
           duration: 0,
-          routeGeometry: null
+          routeCache: null
         };
 
-        // Save photo blob to IndexedDB
         await savePhoto(stop.id, file);
         setThumbUrl(stop, file);
 
         stops.push(stop);
-        // Sort by timestamp (oldest first), then by id
         stops.sort((a, b) => {
           if (a.timestamp && b.timestamp) return new Date(a.timestamp) - new Date(b.timestamp);
           if (a.timestamp) return -1;
@@ -653,11 +760,8 @@
           return a.id.localeCompare(b.id);
         });
 
-        // Save trip data
         const tripId = getCurrentTripId();
-        if (tripId) {
-          updateTripStops(tripId, stops);
-        }
+        if (tripId) updateTripStops(tripId, stops);
 
         await renderStops();
         loadingEl.remove();
@@ -671,7 +775,7 @@
 
     async function reverseGeocode(lat, lng) {
       try {
-        const resp = await fetch(
+        const resp = await rateLimitedFetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
           { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
         );
@@ -690,8 +794,8 @@
 
     async function geocode(query) {
       try {
-        const resp = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+        const resp = await rateLimitedFetch(
+          `https://nominatim.openspotmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
           { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
         );
         const data = await resp.json();
@@ -719,7 +823,12 @@
           return;
         }
         const blob = await getPhoto(stop.id);
-        if (blob) setThumbUrl(stop, blob);
+        if (blob) {
+          setThumbUrl(stop, blob);
+        } else {
+          // No photo in IndexedDB — use a 1x1 transparent placeholder
+          stop.thumb = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        }
       }));
     }
 
@@ -767,7 +876,7 @@
       if (!trip) return alert('No trip to export.');
 
       const exportStops = await Promise.all(trip.stops.map(async stop => {
-        const { thumb, ...cleanStop } = stop;
+        const { thumb, routeCache, ...cleanStop } = stop;
         const blob = await getPhoto(stop.id);
         return {
           ...cleanStop,
@@ -802,14 +911,15 @@
         if (!imported.name || !Array.isArray(imported.stops)) throw new Error('Invalid trip file');
 
         const trips = getTrips();
-        const id = 'trip-' + Date.now();
+        const id = generateId('trip-');
         const importedStops = [];
 
         for (const stop of imported.stops) {
-          const { photoDataUrl, thumb, ...cleanStop } = stop;
+          const { photoDataUrl, thumb, routeCache, ...cleanStop } = stop;
           const newStop = {
             ...cleanStop,
-            id: 'stop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+            id: generateId('stop-'),
+            routeCache: null
           };
           importedStops.push(newStop);
           if (photoDataUrl) {
@@ -846,13 +956,43 @@
       }
     }
 
+    // --- Lightbox ---
+    function showLightbox(stopId) {
+      const url = thumbUrls.get(stopId);
+      if (!url) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'lightbox';
+      overlay.innerHTML = `<img src="${url}" alt="Photo">`;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    }
+
+    // --- Stop name editing ---
+    function renameStop(index) {
+      const stop = stops[index];
+      const newName = prompt('Rename stop:', stop.name);
+      if (newName === null || newName === stop.name) return;
+      stop.name = newName;
+      const tripId = getCurrentTripId();
+      if (tripId) updateTripStops(tripId, stops);
+      renderStops();
+    }
+
+    // --- Zoom to stop on map ---
+    function zoomToStop(index) {
+      const stop = stops[index];
+      map.setView([stop.lat, stop.lng], 14, { animate: true });
+      // Open the marker popup
+      if (markers[index]) markers[index].openPopup();
+    }
+
     async function renderStops() {
       const list = document.getElementById('stopsList');
       const stats = document.getElementById('tripStats');
 
-      // Clear existing
       markersLayer.clearLayers();
       routeLayer.clearLayers();
+      markers.length = 0;
 
       if (stops.length === 0) {
         list.innerHTML = `
@@ -869,36 +1009,38 @@
       stats.style.display = 'flex';
       await ensureThumbs();
 
-      // Render stop cards
       let html = '';
       const bounds = L.latLngBounds();
       segmentDistances = [];
       segmentDurations = [];
 
       stops.forEach((stop, i) => {
+        // Segment distance = distance FROM previous stop TO this one
         const haversineDist = i > 0 ? haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng) : 0;
         segmentDistances.push(haversineDist);
+        segmentDurations.push(0);
 
         html += `
-          <div class="stop-card" data-id="${stop.id}">
-            <img class="stop-thumb" src="${stop.thumb}" alt="${stop.name}">
+          <div class="stop-card" data-id="${stop.id}" onclick="zoomToStop(${i})">
+            <img class="stop-thumb" src="${stop.thumb || ''}" alt="${escapeHtml(stop.name)}" onclick="event.stopPropagation(); showLightbox('${stop.id}')">
             <div class="stop-info">
               <div class="stop-name">${escapeHtml(stop.name)}</div>
               <div class="stop-meta">#${i + 1} · ${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}</div>
               ${stop.timestamp ? '<div class="stop-meta">' + new Date(stop.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + '</div>' : ''}
-              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : (stop.distance ? stop.distance : '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...')}</div>
+              <div class="stop-distance" id="dist-${i}">${i === 0 ? 'Start' : (stop.distance || '<span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> routing...')}</div>
             </div>
             <div class="stop-actions">
-              <button class="stop-btn move" onclick="moveStop(${i}, -1)" title="Move up">↑</button>
-              <button class="stop-btn move" onclick="moveStop(${i}, 1)" title="Move down">↓</button>
-              <button class="stop-btn delete" onclick="deleteStop(${i})" title="Delete">✕</button>
+              <button class="stop-btn edit" onclick="event.stopPropagation(); renameStop(${i})" title="Rename">✏️</button>
+              <button class="stop-btn move" onclick="event.stopPropagation(); moveStop(${i}, -1)" title="Move up">↑</button>
+              <button class="stop-btn move" onclick="event.stopPropagation(); moveStop(${i}, 1)" title="Move down">↓</button>
+              <button class="stop-btn delete" onclick="event.stopPropagation(); deleteStop(${i})" title="Delete">✕</button>
             </div>
           </div>`;
 
-        // Add marker
         const marker = L.marker([stop.lat, stop.lng])
           .bindPopup(`<strong>${escapeHtml(stop.name)}</strong><br>#${i + 1}`)
           .addTo(markersLayer);
+        markers.push(marker);
 
         bounds.extend([stop.lat, stop.lng]);
       });
@@ -917,7 +1059,11 @@
         map.fitBounds(bounds, { padding: [40, 40] });
       }
 
-      // Update stats
+      // Update stats (after routes are fetched so distances are accurate)
+      updateStats();
+    }
+
+    function updateStats() {
       const totalMiles = segmentDistances.reduce((a, b) => a + b, 0);
       const totalSeconds = segmentDurations.reduce((a, b) => a + b, 0);
       document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
@@ -928,30 +1074,38 @@
     async function drawDrivingRoutes(stops) {
       const routePromises = [];
       for (let i = 0; i < stops.length - 1; i++) {
-        const from = stops[i];
-        const to = stops[i + 1];
-        routePromises.push(fetchOSRMRoute(from.lat, from.lng, to.lat, to.lng, i));
+        routePromises.push(fetchOSRMRoute(i));
       }
       await Promise.all(routePromises);
     }
 
-    async function fetchOSRMRoute(lat1, lng1, lat2, lng2, segmentIndex) {
+    async function fetchOSRMRoute(segmentIndex) {
+      // segmentIndex is the index of the FROM stop; route goes to FROM+1
+      // Distances/durations are stored at index segmentIndex (the segment starting at this index)
       const from = stops[segmentIndex];
       const to = stops[segmentIndex + 1];
-      const key = from && to ? routeKey(from, to) : null;
+      if (!from || !to) return;
 
-      if (to?.routeCache?.key === key) {
-        segmentDistances[segmentIndex + 1] = to.routeCache.miles;
-        segmentDurations[segmentIndex + 1] = to.routeCache.duration || 0;
+      const key = routeKey(from, to);
+
+      // Check cache: key must match current pair
+      if (to.routeCache && to.routeCache.key === key) {
+        segmentDistances[segmentIndex] = to.routeCache.miles;
+        segmentDurations[segmentIndex] = to.routeCache.duration || 0;
         addRouteToMap(to.routeCache);
         const distEl = document.getElementById('dist-' + (segmentIndex + 1));
         if (distEl) distEl.innerHTML = formatDistance(to.routeCache.miles);
+        updateStats();
         return;
       }
 
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=geojson&steps=false`;
-        const resp = await fetch(url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=false`;
+        const resp = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await resp.json();
 
         if (data.code === 'Ok' && data.routes.length > 0) {
@@ -961,41 +1115,35 @@
           const cachedRoute = { key, miles, duration: route.duration || 0, geometry: coords };
           addRouteToMap(cachedRoute);
 
-          segmentDistances[segmentIndex + 1] = miles;
-          segmentDurations[segmentIndex + 1] = route.duration || 0;
+          segmentDistances[segmentIndex] = miles;
+          segmentDurations[segmentIndex] = route.duration || 0;
 
-          // Update stop card
           const distEl = document.getElementById('dist-' + (segmentIndex + 1));
-          if (distEl) {
-            distEl.innerHTML = formatDistance(miles);
-          }
+          if (distEl) distEl.innerHTML = formatDistance(miles);
 
-          // Update stop data
-          if (to) {
-            to.distance = formatDistance(miles);
-            to.duration = route.duration || 0;
-            to.routeCache = cachedRoute;
-          }
+          to.distance = formatDistance(miles);
+          to.duration = route.duration || 0;
+          to.routeCache = cachedRoute;
 
-          // Save updated trip
           const tripId = getCurrentTripId();
-          if (tripId) {
-            updateTripStops(tripId, stops);
-          }
+          if (tripId) updateTripStops(tripId, stops);
         } else {
-          const haversineDist = haversine(lat1, lng1, lat2, lng2);
-          segmentDistances[segmentIndex + 1] = haversineDist;
+          // OSRM returned no route — use haversine fallback
+          const haversineDist = haversine(from.lat, from.lng, to.lat, to.lng);
+          segmentDistances[segmentIndex] = haversineDist;
           const distEl = document.getElementById('dist-' + (segmentIndex + 1));
-          if (distEl) {
-            distEl.innerHTML = formatDistance(haversineDist);
-          }
+          if (distEl) distEl.innerHTML = formatDistance(haversineDist) + ' (straight line)';
         }
+        updateStats();
       } catch (err) {
-        console.warn('OSRM route failed for segment', segmentIndex, err);
+        console.warn('OSRM route failed for segment', segmentIndex, err.message || err);
+        const haversineDist = haversine(from.lat, from.lng, to.lat, to.lng);
+        segmentDistances[segmentIndex] = haversineDist;
         const distEl = document.getElementById('dist-' + (segmentIndex + 1));
         if (distEl) {
-          distEl.innerHTML = '⚠️ routing failed';
+          distEl.innerHTML = formatDistance(haversineDist) + ' (~offline)';
         }
+        updateStats();
       }
     }
 
@@ -1003,6 +1151,13 @@
       const newIndex = index + direction;
       if (newIndex < 0 || newIndex >= stops.length) return;
       [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]];
+      // Invalidate route caches for affected segments
+      [index, newIndex].forEach(i => {
+        // Clear cache on stops that moved
+        stops[i].routeCache = null;
+        stops[i].distance = '';
+        stops[i].duration = 0;
+      });
       const tripId = getCurrentTripId();
       if (tripId) updateTripStops(tripId, stops);
       renderStops();
@@ -1012,15 +1167,17 @@
       if (!confirm('Delete this stop?')) return;
       const stop = stops[index];
       stops.splice(index, 1);
-      // Clean up photo
+      // Invalidate caches on neighbors
+      if (stops[index]) { stops[index].routeCache = null; stops[index].distance = ''; stops[index].duration = 0; }
+      if (stops[index - 1]) { stops[index - 1].routeCache = null; stops[index - 1].distance = ''; stops[index - 1].duration = 0; }
       await deletePhoto(stop.id);
+      if (thumbUrls.has(stop.id)) {
+        URL.revokeObjectURL(thumbUrls.get(stop.id));
+        thumbUrls.delete(stop.id);
+      }
       const tripId = getCurrentTripId();
       if (tripId) updateTripStops(tripId, stops);
       renderStops();
-    }
-
-    function setupClear() {
-      // Clear button is handled via trip deletion
     }
 
     function haversine(lat1, lon1, lat2, lon2) {
@@ -1051,6 +1208,13 @@
       toast.textContent = message;
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 2500);
+    }
+
+    // --- PWA Service Worker ---
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
     }
 
     // Start
