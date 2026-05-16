@@ -66,6 +66,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      cursor: pointer;
     }
 
     .trip-btn {
@@ -336,7 +337,7 @@
     <div class="header">
       <h1>🗺️ Roadtrip Stops</h1>
       <div class="trip-selector">
-        <select class="trip-select" id="tripSelect"></select>
+        <select class="trip-select" id="tripSelect" title="Trip name"></select>
         <button class="trip-btn" id="newTripBtn">+ New</button>
         <button class="trip-btn" id="renameTripBtn" title="Rename trip">✏️</button>
         <button class="trip-btn danger" id="deleteTripBtn" title="Delete trip">🗑️</button>
@@ -365,7 +366,7 @@
         </svg>
         Add Stop from Photo
       </button>
-      <input type="file" id="fileInput" accept="image/heic,image/heif,image/jpeg,image/jpg,image/png,image/*" multiple>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" multiple>
       <input type="file" id="importInput" accept="application/json,.json" style="display:none">
       <div class="data-actions">
         <button class="data-btn" id="exportBtn">Export Trip</button>
@@ -435,12 +436,27 @@
 
     // --- Nominatim rate limiter (1 req/sec) ---
     let lastApiCall = 0;
+    const NOMINATIM_AGENT = 'RoadtripStops/1.0 (personal project)';
+
     async function rateLimitedFetch(url, opts) {
       const now = Date.now();
       const wait = Math.max(0, 1100 - (now - lastApiCall));
       if (wait > 0) await new Promise(r => setTimeout(r, wait));
       lastApiCall = Date.now();
-      return fetch(url, opts);
+      const headers = { 'User-Agent': NOMINATIM_AGENT, 'Accept-Language': 'en' };
+      return fetch(url, { ...opts, headers: { ...headers, ...(opts?.headers || {}) } });
+    }
+
+    // --- Route cache: keyed by coordinate pair, not stored on stop objects ---
+    // This survives stop reordering because the key is always (fromCoords, toCoords)
+    const routeCache = new Map();
+
+    function routeKey(from, to) {
+      return [from.lat, from.lng, to.lat, to.lng].map(n => Number(n).toFixed(5)).join(',');
+    }
+
+    function invalidateRouteCache() {
+      routeCache.clear();
     }
 
     // --- Trip Management ---
@@ -463,7 +479,6 @@
     }
 
     function generateId(prefix) {
-      // Use crypto for uniqueness instead of Date.now() alone
       const random = (typeof crypto !== 'undefined' && crypto.getRandomValues)
         ? Array.from(crypto.getRandomValues(new Uint8Array(3))).map(b => b.toString(36)).join('')
         : Math.random().toString(36).substr(2, 9);
@@ -519,7 +534,7 @@
       const trips = getTrips();
       if (trips[tripId]) {
         trips[tripId].stops = stops.map(stop => {
-          const { thumb, ...persistedStop } = stop;
+          const { thumb, routeCache: _, ...persistedStop } = stop;
           return persistedStop;
         });
         saveTrips(trips);
@@ -578,6 +593,7 @@
           const opt = document.createElement('option');
           opt.value = trip.id;
           opt.textContent = trip.name;
+          opt.title = trip.name; // tooltip for long names
           if (trip.id === currentId) opt.selected = true;
           select.appendChild(opt);
         });
@@ -618,7 +634,6 @@
         if (!trip) return;
         if (!confirm('Delete "' + trip.name + '" and all its stops? This cannot be undone.')) return;
         await deleteTripById(tripId);
-        // Clean up thumb URLs
         stops.forEach(s => {
           if (thumbUrls.has(s.id)) {
             URL.revokeObjectURL(thumbUrls.get(s.id));
@@ -745,8 +760,7 @@
           fileName: file.name,
           timestamp: photoDate,
           distance: '',
-          duration: 0,
-          routeCache: null
+          duration: 0
         };
 
         await savePhoto(stop.id, file);
@@ -777,7 +791,7 @@
       try {
         const resp = await rateLimitedFetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-          { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
+          {}
         );
         const data = await resp.json();
         if (data.display_name) {
@@ -795,8 +809,8 @@
     async function geocode(query) {
       try {
         const resp = await rateLimitedFetch(
-          `https://nominatim.openspotmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-          { headers: { 'User-Agent': 'RoadtripStops/1.0' } }
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+          {}
         );
         const data = await resp.json();
         if (data.length > 0) {
@@ -826,14 +840,9 @@
         if (blob) {
           setThumbUrl(stop, blob);
         } else {
-          // No photo in IndexedDB — use a 1x1 transparent placeholder
           stop.thumb = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         }
       }));
-    }
-
-    function routeKey(from, to) {
-      return [from.lat, from.lng, to.lat, to.lng].map(n => Number(n).toFixed(5)).join(',');
     }
 
     function formatDuration(seconds) {
@@ -876,7 +885,7 @@
       if (!trip) return alert('No trip to export.');
 
       const exportStops = await Promise.all(trip.stops.map(async stop => {
-        const { thumb, routeCache, ...cleanStop } = stop;
+        const { thumb, ...cleanStop } = stop;
         const blob = await getPhoto(stop.id);
         return {
           ...cleanStop,
@@ -915,11 +924,10 @@
         const importedStops = [];
 
         for (const stop of imported.stops) {
-          const { photoDataUrl, thumb, routeCache, ...cleanStop } = stop;
+          const { photoDataUrl, thumb, ...cleanStop } = stop;
           const newStop = {
             ...cleanStop,
-            id: generateId('stop-'),
-            routeCache: null
+            id: generateId('stop-')
           };
           importedStops.push(newStop);
           if (photoDataUrl) {
@@ -982,7 +990,6 @@
     function zoomToStop(index) {
       const stop = stops[index];
       map.setView([stop.lat, stop.lng], 14, { animate: true });
-      // Open the marker popup
       if (markers[index]) markers[index].openPopup();
     }
 
@@ -1015,7 +1022,6 @@
       segmentDurations = [];
 
       stops.forEach((stop, i) => {
-        // Segment distance = distance FROM previous stop TO this one
         const haversineDist = i > 0 ? haversine(stops[i-1].lat, stops[i-1].lng, stop.lat, stop.lng) : 0;
         segmentDistances.push(haversineDist);
         segmentDurations.push(0);
@@ -1059,7 +1065,6 @@
         map.fitBounds(bounds, { padding: [40, 40] });
       }
 
-      // Update stats (after routes are fetched so distances are accurate)
       updateStats();
     }
 
@@ -1068,7 +1073,10 @@
       const totalSeconds = segmentDurations.reduce((a, b) => a + b, 0);
       document.getElementById('totalMiles').textContent = formatDistance(totalMiles);
       document.getElementById('stopCount').textContent = stops.length;
-      document.getElementById('estHours').textContent = totalSeconds ? formatDuration(totalSeconds) : Math.round(totalMiles / 55) + 'h';
+      // Use real OSRM duration if available, otherwise estimate from miles
+      document.getElementById('estHours').textContent = totalSeconds
+        ? formatDuration(totalSeconds)
+        : (totalMiles > 0 ? Math.round(totalMiles / 50) + 'h' : '0h');
     }
 
     async function drawDrivingRoutes(stops) {
@@ -1080,21 +1088,20 @@
     }
 
     async function fetchOSRMRoute(segmentIndex) {
-      // segmentIndex is the index of the FROM stop; route goes to FROM+1
-      // Distances/durations are stored at index segmentIndex (the segment starting at this index)
       const from = stops[segmentIndex];
       const to = stops[segmentIndex + 1];
       if (!from || !to) return;
 
       const key = routeKey(from, to);
 
-      // Check cache: key must match current pair
-      if (to.routeCache && to.routeCache.key === key) {
-        segmentDistances[segmentIndex] = to.routeCache.miles;
-        segmentDurations[segmentIndex] = to.routeCache.duration || 0;
-        addRouteToMap(to.routeCache);
+      // Check centralized route cache
+      const cached = routeCache.get(key);
+      if (cached) {
+        segmentDistances[segmentIndex] = cached.miles;
+        segmentDurations[segmentIndex] = cached.duration || 0;
+        addRouteToMap(cached);
         const distEl = document.getElementById('dist-' + (segmentIndex + 1));
-        if (distEl) distEl.innerHTML = formatDistance(to.routeCache.miles);
+        if (distEl) distEl.innerHTML = formatDistance(cached.miles);
         updateStats();
         return;
       }
@@ -1113,6 +1120,9 @@
           const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
           const miles = route.distance / 1609.34;
           const cachedRoute = { key, miles, duration: route.duration || 0, geometry: coords };
+
+          // Store in centralized cache
+          routeCache.set(key, cachedRoute);
           addRouteToMap(cachedRoute);
 
           segmentDistances[segmentIndex] = miles;
@@ -1123,12 +1133,10 @@
 
           to.distance = formatDistance(miles);
           to.duration = route.duration || 0;
-          to.routeCache = cachedRoute;
 
           const tripId = getCurrentTripId();
           if (tripId) updateTripStops(tripId, stops);
         } else {
-          // OSRM returned no route — use haversine fallback
           const haversineDist = haversine(from.lat, from.lng, to.lat, to.lng);
           segmentDistances[segmentIndex] = haversineDist;
           const distEl = document.getElementById('dist-' + (segmentIndex + 1));
@@ -1151,13 +1159,8 @@
       const newIndex = index + direction;
       if (newIndex < 0 || newIndex >= stops.length) return;
       [stops[index], stops[newIndex]] = [stops[newIndex], stops[index]];
-      // Invalidate route caches for affected segments
-      [index, newIndex].forEach(i => {
-        // Clear cache on stops that moved
-        stops[i].routeCache = null;
-        stops[i].distance = '';
-        stops[i].duration = 0;
-      });
+      // Invalidate ALL route caches — segments changed
+      invalidateRouteCache();
       const tripId = getCurrentTripId();
       if (tripId) updateTripStops(tripId, stops);
       renderStops();
@@ -1167,9 +1170,8 @@
       if (!confirm('Delete this stop?')) return;
       const stop = stops[index];
       stops.splice(index, 1);
-      // Invalidate caches on neighbors
-      if (stops[index]) { stops[index].routeCache = null; stops[index].distance = ''; stops[index].duration = 0; }
-      if (stops[index - 1]) { stops[index - 1].routeCache = null; stops[index - 1].distance = ''; stops[index - 1].duration = 0; }
+      // Invalidate ALL route caches — segments changed
+      invalidateRouteCache();
       await deletePhoto(stop.id);
       if (thumbUrls.has(stop.id)) {
         URL.revokeObjectURL(thumbUrls.get(stop.id));
